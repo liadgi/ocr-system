@@ -4,3 +4,5 @@ target/
 *.iml
 .gradle
 build/
+output/
+out/
