@@ -1,3 +1,6 @@
 Manifest-Version: 1.0
+Class-Path: /Users/liadginosar/Dropbox/CS-BGU/DistributedSystems/OCR_S
+ ystem/out/artifacts/Manager_jar/aws-java-sdk-1.11.315/lib/aws-java-sd
+ k-1.11.315 copy
 Main-Class: dsp.liadginosar.manager.Manager
 

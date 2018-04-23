@@ -9,19 +9,20 @@ import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.ec2.model.RunInstancesResult;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.*;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Base64;
-import java.util.Date;
 import java.util.List;
 
 public class LocalApplication {
 
-    private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue" + new Date().getTime();
+    private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue";
     private AmazonSQS sqs;
     private String queueUrl;
 
@@ -33,7 +34,10 @@ public class LocalApplication {
         final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
         try {
             String key_name = getKeyName(file_path);
-            s3.putObject("dsp-ocr", key_name, file_path);
+
+            PutObjectRequest request = new PutObjectRequest("dsp-ocr", key_name, new File(file_path));
+
+            s3.putObject(request.withCannedAcl(CannedAccessControlList.PublicRead));
         } catch (AmazonServiceException e) {
             System.err.println(e.getErrorMessage());
             System.exit(1);
@@ -61,7 +65,7 @@ public class LocalApplication {
 
 
     private void initManagerInstance(int numOfWorkers) {
-        String userDataInitScript = "#!/bin/bash\nwget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\njava -jar ~/Manager.jar " + numOfWorkers;
+        String userDataInitScript = "#!/bin/bash\nwget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\necho executing manager... \njava -jar ~/Manager.jar " + numOfWorkers;
 
         byte[] encodedBytes = Base64.getEncoder().encode(userDataInitScript.getBytes());
 
@@ -87,7 +91,7 @@ public class LocalApplication {
                 runInstancesRequest);
     }
 
-    private void notifyManagerDownloadImagesFile(String file_path) {
+    private void notifyManagerToDownloadImagesFile(String file_path) {
         SendMessageRequest send_msg_request = new SendMessageRequest()
                 .withQueueUrl(queueUrl)
                 .withMessageBody("new task " + getKeyName(file_path))
@@ -109,8 +113,8 @@ public class LocalApplication {
 
             app.uploadImagesLinksFile(file_path);
             app.initQueue();
-            app.initManagerInstance(numOfWorkers);
-            app.notifyManagerDownloadImagesFile(file_path);
+            //app.initManagerInstance(numOfWorkers);
+            app.notifyManagerToDownloadImagesFile(file_path);
 
             String s3FileLocation = app.retrieveOutputFileLocation();
             app.WriteFileToDisk(s3FileLocation);

@@ -9,22 +9,27 @@ import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.Date;
+import java.io.*;
 import java.util.List;
 
+//import com.amazonaws.services.sqs.model.AmazonSQSException;
+
 public class Manager {
-    private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue" + new Date().getTime();
+    private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue";
+    Message m;
     private AmazonSQS sqs;
     private String queueUrl;
 
     private void initReceivingQueue() {
+        ReceiveMessageRequest receive_request = new ReceiveMessageRequest()
+                .withQueueUrl(queueUrl)
+                .withWaitTimeSeconds(20);
+        AmazonSQS sqs2;
         sqs = AmazonSQSClientBuilder.defaultClient();
+        CreateQueueResult create_result = sqs.createQueue(QUEUE_APP_TO_MANAGER);
         try {
-            CreateQueueResult create_result = sqs.createQueue(QUEUE_APP_TO_MANAGER);
+
+
         } catch (AmazonSQSException e) {
             if (!e.getErrorCode().equals("QueueAlreadyExists")) {
                 throw e;
@@ -55,14 +60,16 @@ public class Manager {
         try {
             S3Object o = s3.getObject("dsp-ocr", key_name);
             S3ObjectInputStream s3is = o.getObjectContent();
-            FileOutputStream fos = new FileOutputStream(new File(key_name));
-            byte[] read_buf = new byte[1024];
-            int read_len = 0;
-            while ((read_len = s3is.read(read_buf)) > 0) {
-                fos.write(read_buf, 0, read_len);
+
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(s3is));
+            String line = null;
+
+            while ((line = bufferedReader.readLine()) != null) {
+                System.out.println(line);
             }
+
             s3is.close();
-            fos.close();
+
         } catch (AmazonServiceException e) {
             System.err.println(e.getErrorMessage());
             System.exit(1);
@@ -85,8 +92,12 @@ public class Manager {
         List<Message> messages = manager.retreiveMessagesFromQueue();
         String inputFileLocation = manager.retrieveInputFileLocation(messages);
 
-        System.out.println("Download input file from S3:");
-        manager.downloadInputFile(inputFileLocation);
+        if (inputFileLocation == null) {
+            System.out.println("No input file.");
+        } else {
+            System.out.println("Download input file from S3:");
+            manager.downloadInputFile(inputFileLocation);
+        }
         // read file and map urls to workers
 
         
@@ -98,7 +109,8 @@ public class Manager {
         String fileLocation = null;
         for (Message m : messages) {
             if (m.getBody().startsWith("new task")) {
-                String[] arr = m.getBody().split("new task");
+                System.out.println("Message arrived: new task");
+                String[] arr = m.getBody().split("new task ");
                 fileLocation = arr[1];
                 sqs.deleteMessage(queueUrl, m.getReceiptHandle());
             }
