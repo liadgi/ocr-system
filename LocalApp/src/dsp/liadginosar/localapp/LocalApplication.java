@@ -9,13 +9,15 @@ import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.ec2.model.RunInstancesResult;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.*;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
+import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
@@ -25,13 +27,13 @@ public class LocalApplication {
     private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue";
     private AmazonSQS sqs;
     private String queueUrl;
-
+    private final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
     private String getKeyName(String file_path) {
         return Paths.get(file_path).getFileName().toString();
     }
 
     private void uploadImagesLinksFile(String file_path) {
-        final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
+
         try {
             String key_name = getKeyName(file_path);
 
@@ -137,7 +139,7 @@ public class LocalApplication {
 
         for (Message m : messages) {
             if (m.getBody().startsWith("done task")) {
-                String[] arr = m.getBody().split("done task");
+                String[] arr = m.getBody().split("done task ");
                 s3FileLocation = arr[1];
                 sqs.deleteMessage(queueUrl, m.getReceiptHandle());
             }
@@ -145,7 +147,31 @@ public class LocalApplication {
         return s3FileLocation;
     }
 
-    private void WriteFileToDisk(String s3FileLocation) {
+    private void WriteFileToDisk(String s3FileKey) {
+        try {
+            S3Object o = s3.getObject("dsp-ocr", s3FileKey);
+            S3ObjectInputStream s3is = o.getObjectContent();
+
+            // Create file
+            FileOutputStream fos = new FileOutputStream(new File(s3FileKey));
+            byte[] read_buf = new byte[1024];
+            int read_len;
+            while ((read_len = s3is.read(read_buf)) > 0) {
+                fos.write(read_buf, 0, read_len);
+            }
+            s3is.close();
+            fos.close();
+
+        } catch (AmazonServiceException e) {
+            System.err.println(e.getErrorMessage());
+            System.exit(1);
+        } catch (FileNotFoundException e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+        } catch (IOException e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+        }
 
     }
 }
