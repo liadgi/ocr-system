@@ -3,14 +3,11 @@ package dsp.liadginosar.manager;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
+import dsp.liadginosar.shared.Configuration;
 
 import java.util.List;
 
 public class SQSManager {
-    public static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue";
-    public static final String QUEUE_MANAGER_TO_WORKERS = "ManagerToWorkersQueue";
-    public static final String QUEUE_WORKERS_TO_MANAGER = "WorkersToManagerQueue";
-    public static final String QUEUE_MANAGER_TO_APP = "ManagerToLocalAppQueue";
 
     private AmazonSQS sqs;
 
@@ -21,15 +18,15 @@ public class SQSManager {
 
     private void initQueues() {
         try {
-            CreateQueueResult create_result = sqs.createQueue(QUEUE_APP_TO_MANAGER);
-            create_result = sqs.createQueue(QUEUE_MANAGER_TO_WORKERS);
-            create_result = sqs.createQueue(QUEUE_WORKERS_TO_MANAGER);
-            create_result = sqs.createQueue(QUEUE_MANAGER_TO_APP);
+            CreateQueueResult create_result = sqs.createQueue(Configuration.QUEUE_APP_TO_MANAGER);
+            create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_WORKERS);
+            create_result = sqs.createQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
+            create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_APP);
 
-            initReceivingQueue(QUEUE_APP_TO_MANAGER);
-            initReceivingQueue(QUEUE_MANAGER_TO_WORKERS);
-            initReceivingQueue(QUEUE_WORKERS_TO_MANAGER);
-            initReceivingQueue(QUEUE_MANAGER_TO_APP);
+            initReceivingQueue(Configuration.QUEUE_APP_TO_MANAGER);
+            initReceivingQueue(Configuration.QUEUE_MANAGER_TO_WORKERS);
+            initReceivingQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
+            initReceivingQueue(Configuration.QUEUE_MANAGER_TO_APP);
         } catch (AmazonSQSException e) {
             if (!e.getErrorCode().equals("QueueAlreadyExists")) {
                 throw e;
@@ -59,7 +56,7 @@ public class SQSManager {
     }
 
     public void initReceivingQueue(String queueName) {
-        String queueUrl = sqs.getQueueUrl(QUEUE_APP_TO_MANAGER).getQueueUrl();
+        String queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
 
         // Enable long polling on an existing queue
         SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
@@ -69,7 +66,7 @@ public class SQSManager {
     }
 
     public void deleteMessage(String queueName, Message m) {
-        String queueUrl = sqs.getQueueUrl(QUEUE_APP_TO_MANAGER).getQueueUrl();
+        String queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
         sqs.deleteMessage(queueUrl, m.getReceiptHandle());
     }
 }

@@ -16,15 +16,18 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
+import dsp.liadginosar.shared.Configuration;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
 
 public class LocalApplication {
 
-    private static final String QUEUE_APP_TO_MANAGER = "LocalAppToManagerQueue";
     private AmazonSQS sqs;
     private String queueUrl;
     private final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
@@ -33,7 +36,7 @@ public class LocalApplication {
     }
 
     private void uploadImagesLinksFile(String file_path) {
-
+        System.out.println("uploadImagesLinksFile");
         try {
             String key_name = getKeyName(file_path);
 
@@ -49,14 +52,14 @@ public class LocalApplication {
     private void initQueue() {
         sqs = AmazonSQSClientBuilder.defaultClient();
         try {
-            CreateQueueResult create_result = sqs.createQueue(QUEUE_APP_TO_MANAGER);
+            CreateQueueResult create_result = sqs.createQueue(Configuration.QUEUE_APP_TO_MANAGER);
         } catch (AmazonSQSException e) {
             if (!e.getErrorCode().equals("QueueAlreadyExists")) {
                 throw e;
             }
         }
 
-        queueUrl = sqs.getQueueUrl(QUEUE_APP_TO_MANAGER).getQueueUrl();
+        queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
 
         // Enable long polling on an existing queue
         SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
@@ -130,6 +133,7 @@ public class LocalApplication {
     }
 
     private String retrieveOutputFileLocation() {
+        System.out.println("Retrieving output file location");
         String s3FileLocation = null;
         // Enable long polling on a message receipt
         ReceiveMessageRequest receive_request = new ReceiveMessageRequest()

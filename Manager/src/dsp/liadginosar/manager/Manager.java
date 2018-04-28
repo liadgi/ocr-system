@@ -6,11 +6,10 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.model.Message;
+import dsp.liadginosar.shared.Configuration;
 
 import java.io.*;
 import java.util.List;
-
-import static dsp.liadginosar.manager.SQSManager.*;
 
 //import com.amazonaws.services.sqs.model.AmazonSQSException;
 
@@ -20,6 +19,7 @@ public class Manager {
     private EC2Creator ec2Creator;
 
     private int imagesPerWorker;
+    private int totalNumOfImages;
 
     public Manager(int imagesPerWorker){
         ec2Creator = new EC2Creator();
@@ -38,15 +38,18 @@ public class Manager {
             String line;
 
             int lineCounter = imagesPerWorker + 1;
+            int totalNumOfImages = 0;
 
             while ((line = bufferedReader.readLine()) != null) {
                 if(lineCounter > imagesPerWorker) {
                     ec2Creator.runInstance();
+                    totalNumOfImages++;
                     lineCounter = 0;
                 }
-                sqsManager.sendMessageToQueue(QUEUE_MANAGER_TO_WORKERS,"new image task " + line);
+                sqsManager.sendMessageToQueue(Configuration.QUEUE_MANAGER_TO_WORKERS,"new image task " + line);
                 lineCounter++;
             }
+            this.totalNumOfImages = totalNumOfImages;
 
             s3is.close();
 
@@ -70,7 +73,7 @@ public class Manager {
         System.out.println("Manager started, # of images per worker: " + imagesPerWorker);
 
         System.out.println("started listening on SQS:");
-        List<Message> messages = sqsManager.retreiveMessagesFromQueue(QUEUE_APP_TO_MANAGER);
+        List<Message> messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_APP_TO_MANAGER);
         String inputFileLocation = retrieveInputFileLocation(messages);
 
         if (inputFileLocation == null) {
@@ -78,16 +81,16 @@ public class Manager {
         } else {
             System.out.println("Download input file from S3:");
 
-
             splitWorkToWorkers(inputFileLocation);
 
             File file = createSummaryFile();
+
+            deactivateWorkers();
 
             uploadFile(file);
 
             notifyLocalApp();
         }
-        // read file and map urls to workers
 
         System.out.println("Manager stopped.");
     }
@@ -99,7 +102,7 @@ public class Manager {
     }
 
     private void notifyLocalApp() {
-        sqsManager.sendMessageToQueue(QUEUE_MANAGER_TO_APP, "done task");
+        sqsManager.sendMessageToQueue(Configuration.QUEUE_MANAGER_TO_APP, "done task");
     }
 
     private void uploadFile(File file) {
@@ -107,7 +110,7 @@ public class Manager {
     }
 
     private File createSummaryFile() {
-        List<Message> messages = sqsManager.retreiveMessagesFromQueue(QUEUE_WORKERS_TO_MANAGER);
+        List<Message> messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
 
         StringBuilder builder = new StringBuilder();
 
@@ -118,7 +121,7 @@ public class Manager {
 
                 builder.append(arr[1]).append("\n");
 
-                sqsManager.deleteMessage(QUEUE_WORKERS_TO_MANAGER, m);
+                sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
             }
         }
         return null;
@@ -131,7 +134,7 @@ public class Manager {
                 System.out.println("Message arrived: new task");
                 String[] arr = m.getBody().split("new task ");
                 fileLocation = arr[1];
-                sqsManager.deleteMessage(QUEUE_APP_TO_MANAGER, m);
+                sqsManager.deleteMessage(Configuration.QUEUE_APP_TO_MANAGER, m);
             }
         }
         return fileLocation;
