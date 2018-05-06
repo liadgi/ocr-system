@@ -1,36 +1,34 @@
 package dsp.liadginosar.localapp;
 
 import com.amazonaws.AmazonServiceException;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.InstanceType;
-import com.amazonaws.services.ec2.model.RunInstancesRequest;
-import com.amazonaws.services.ec2.model.RunInstancesResult;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.sqs.AmazonSQS;
-import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
-import com.amazonaws.services.sqs.model.*;
+import com.amazonaws.services.sqs.model.Message;
 import dsp.liadginosar.shared.Configuration;
+import dsp.liadginosar.shared.EC2Manager;
+import dsp.liadginosar.shared.SQSManager;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.Base64;
 import java.util.List;
 
 public class LocalApplication {
 
-    private AmazonSQS sqs;
-    private String queueUrl;
+    private SQSManager sqsManager;
+    private EC2Manager ec2Manager;
     private final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
+    private String managerInstanceId;
+
+    public LocalApplication() {
+        this.sqsManager = new SQSManager();
+    }
     private String getKeyName(String file_path) {
         return Paths.get(file_path).getFileName().toString();
     }
@@ -49,59 +47,17 @@ public class LocalApplication {
         }
     }
 
-    private void initQueue() {
-        sqs = AmazonSQSClientBuilder.defaultClient();
-        try {
-            CreateQueueResult create_result = sqs.createQueue(Configuration.QUEUE_APP_TO_MANAGER);
-        } catch (AmazonSQSException e) {
-            if (!e.getErrorCode().equals("QueueAlreadyExists")) {
-                throw e;
-            }
-        }
-
-        queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
-
-        // Enable long polling on an existing queue
-        SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
-                .withQueueUrl(queueUrl)
-                .addAttributesEntry("ReceiveMessageWaitTimeSeconds", "20");
-        sqs.setQueueAttributes(set_attrs_request);
-    }
-
-
     private void initManagerInstance(int numOfWorkers) {
         String userDataInitScript = "#!/bin/bash\nwget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\necho executing manager... \njava -jar ~/Manager.jar " + numOfWorkers;
 
-        byte[] encodedBytes = Base64.getEncoder().encode(userDataInitScript.getBytes());
+        this.ec2Manager = new EC2Manager(userDataInitScript);
 
-        String userDataInitScriptBase64 = new String(encodedBytes);
+        this.managerInstanceId =  this.ec2Manager.runInstance();
 
-        RunInstancesRequest runInstancesRequest =
-                new RunInstancesRequest();
-
-        runInstancesRequest.withImageId("ami-1853ac65")
-                .withInstanceType(InstanceType.T2Micro)
-                .withMinCount(1)
-                .withMaxCount(1)
-                .withUserData(userDataInitScriptBase64)
-                .withKeyName("dist-sys-course")
-                .withSecurityGroups("launch-wizard-1");
-
-        AmazonEC2 amazonEC2Client =
-                AmazonEC2ClientBuilder.standard()
-                        .withCredentials(new DefaultAWSCredentialsProviderChain())
-                        .build();
-
-        RunInstancesResult result = amazonEC2Client.runInstances(
-                runInstancesRequest);
     }
 
     private void notifyManagerToDownloadImagesFile(String file_path) {
-        SendMessageRequest send_msg_request = new SendMessageRequest()
-                .withQueueUrl(queueUrl)
-                .withMessageBody("new task " + getKeyName(file_path))
-                .withDelaySeconds(5);
-        sqs.sendMessage(send_msg_request);
+        this.sqsManager.sendMessageToQueue(Configuration.QUEUE_APP_TO_MANAGER, "new task " + getKeyName(file_path));
     }
 
     public static void main(String[] args) throws IOException, Exception {
@@ -117,12 +73,12 @@ public class LocalApplication {
             LocalApplication app = new LocalApplication();
 
             app.uploadImagesLinksFile(file_path);
-            app.initQueue();
             //app.initManagerInstance(numOfWorkers);
             app.notifyManagerToDownloadImagesFile(file_path);
 
             String s3FileLocation = app.retrieveOutputFileLocation();
             app.WriteFileToDisk(s3FileLocation);
+            app.deactivateManager();
 
             System.out.println("Done.");
 
@@ -132,20 +88,24 @@ public class LocalApplication {
 
     }
 
+    private void deactivateManager() {
+        this.ec2Manager.deactivateInstance(this.managerInstanceId);
+    }
+
     private String retrieveOutputFileLocation() {
         System.out.println("Retrieving output file location");
+
+
         String s3FileLocation = null;
-        // Enable long polling on a message receipt
-        ReceiveMessageRequest receive_request = new ReceiveMessageRequest()
-                .withQueueUrl(queueUrl)
-                .withWaitTimeSeconds(20);
-        List<Message> messages = sqs.receiveMessage(receive_request).getMessages();
+
+        List<Message> messages;
+        while ((messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_MANAGER_TO_APP)) == null);
 
         for (Message m : messages) {
             if (m.getBody().startsWith("done task")) {
                 String[] arr = m.getBody().split("done task ");
                 s3FileLocation = arr[1];
-                sqs.deleteMessage(queueUrl, m.getReceiptHandle());
+                this.sqsManager.deleteMessage(Configuration.QUEUE_MANAGER_TO_APP, m);
             }
         }
         return s3FileLocation;

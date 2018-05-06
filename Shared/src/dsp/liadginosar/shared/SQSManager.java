@@ -1,9 +1,8 @@
-package dsp.liadginosar.manager;
+package dsp.liadginosar.shared;
 
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
-import dsp.liadginosar.shared.Configuration;
 
 import java.util.List;
 
@@ -56,7 +55,7 @@ public class SQSManager {
     }
 
     public void initReceivingQueue(String queueName) {
-        String queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
+        String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
 
         // Enable long polling on an existing queue
         SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
@@ -66,7 +65,7 @@ public class SQSManager {
     }
 
     public void deleteMessage(String queueName, Message m) {
-        String queueUrl = sqs.getQueueUrl(Configuration.QUEUE_APP_TO_MANAGER).getQueueUrl();
+        String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
         sqs.deleteMessage(queueUrl, m.getReceiptHandle());
     }
 }

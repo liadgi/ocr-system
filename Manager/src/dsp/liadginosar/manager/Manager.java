@@ -3,12 +3,16 @@ package dsp.liadginosar.manager;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.model.Message;
 import dsp.liadginosar.shared.Configuration;
+import dsp.liadginosar.shared.EC2Manager;
+import dsp.liadginosar.shared.SQSManager;
 
 import java.io.*;
+import java.util.LinkedList;
 import java.util.List;
 
 //import com.amazonaws.services.sqs.model.AmazonSQSException;
@@ -16,13 +20,20 @@ import java.util.List;
 public class Manager {
 
     private SQSManager sqsManager;
-    private EC2Creator ec2Creator;
+    private EC2Manager ec2Manager;
 
     private int imagesPerWorker;
     private int totalNumOfImages;
 
+    private List<String> workerIds;
+
     public Manager(int imagesPerWorker){
-        ec2Creator = new EC2Creator();
+        workerIds = new LinkedList<>();
+
+        // init script for each worker
+        String userData = "";
+
+        ec2Manager = new EC2Manager(userData);
         sqsManager = new SQSManager();
         this.imagesPerWorker = imagesPerWorker;
     }
@@ -42,7 +53,7 @@ public class Manager {
 
             while ((line = bufferedReader.readLine()) != null) {
                 if(lineCounter > imagesPerWorker) {
-                    ec2Creator.runInstance();
+                    workerIds.add(ec2Manager.runInstance());
                     totalNumOfImages++;
                     lineCounter = 0;
                 }
@@ -66,7 +77,9 @@ public class Manager {
     }
 
     private void deactivateWorkers() {
-
+        for (String worker: workerIds) {
+            ec2Manager.deactivateInstance(worker);
+        }
     }
 
     private void startManager(){
@@ -85,11 +98,11 @@ public class Manager {
 
             File file = createSummaryFile();
 
-            deactivateWorkers();
-
             uploadFile(file);
 
             notifyLocalApp();
+
+            deactivateWorkers();
         }
 
         System.out.println("Manager stopped.");
@@ -106,25 +119,53 @@ public class Manager {
     }
 
     private void uploadFile(File file) {
-
+        final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
+        try {
+            s3.putObject(new PutObjectRequest("dsp-ocr", "output", file));
+        } catch (AmazonServiceException e) {
+            System.err.println(e.getErrorMessage());
+            System.exit(1);
+        }
     }
 
     private File createSummaryFile() {
-        List<Message> messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
+        File file = new File("output.html");
+        BufferedWriter output = null;
+        try {
+            output = new BufferedWriter(new FileWriter(file));
 
-        StringBuilder builder = new StringBuilder();
+            int numOfImagesReceived = 0;
 
-        for (Message m : messages) {
-            if (m.getBody().startsWith("done image task")) {
-                System.out.println("Message arrived: done image task");
-                String[] arr = m.getBody().split("done image task ");
+            while (numOfImagesReceived < this.totalNumOfImages) {
+                List<Message> messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
 
-                builder.append(arr[1]).append("\n");
+                if (messages != null) {
+                    for (Message m : messages) {
+                        if (m.getBody().startsWith("done image task")) {
+                            System.out.println("Message #" + numOfImagesReceived + " arrived: done image task");
+                            String[] arr = m.getBody().split("done image task ");
 
-                sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
+                            String elem = createDivElement(arr[1]);
+                            output.write(elem);
+                            output.newLine();
+
+                            sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
+                            numOfImagesReceived++;
+                        }
+                    }
+                }
+            }
+            if (output != null) {
+                output.close();
             }
         }
-        return null;
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+        return file;
     }
 
     private String retrieveInputFileLocation(List<Message> messages) {
@@ -138,5 +179,9 @@ public class Manager {
             }
         }
         return fileLocation;
+    }
+
+    private String createDivElement(String text) {
+        return "<div>" + text + "/div>";
     }
 }
