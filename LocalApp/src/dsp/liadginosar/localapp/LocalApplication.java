@@ -87,6 +87,7 @@ public class LocalApplication {
             app.WriteFileToDisk(s3FileKey);
             app.deactivateManager();
 
+
             System.out.println("Done.");
 
         } else {
@@ -94,6 +95,7 @@ public class LocalApplication {
         }
 
     }
+
 
     private void deactivateManager() {
         this.ec2Manager.deactivateInstances(this.instanceIds);
