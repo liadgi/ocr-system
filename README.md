@@ -9,7 +9,8 @@ install on each worker:
 	wget https://s3.amazonaws.com/dsp-ocr/ocr.py -O ocr.py
     myrole
 
-ubuntu:    
+ubuntu:
+
 	export LC_ALL=C
     sudo apt-get update
 	sudo apt -y install python
@@ -19,10 +20,6 @@ ubuntu:
 	sudo apt-get -y install tesseract-ocr
 	python ocr.py
 
-amazon:
-    sudo pip install boto3
-    sudo pip install pytesseract
-    sudo pip install tesseract
-
 console output:
+
 	cat /var/log/cloud-init-output.log
