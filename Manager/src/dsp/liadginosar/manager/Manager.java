@@ -192,7 +192,7 @@ public class Manager {
     private String createElement(String url, String text) {
         String elem =
                 "<p>\n" +
-                    "<img src=" + url + "><br/>\n" +
+                    "<img src=\"" + url + "\" style=\"max-height: 500px; max-width: 500px;\"><br/>\n" +
                         text +
                 "</p>\n";
         return elem;

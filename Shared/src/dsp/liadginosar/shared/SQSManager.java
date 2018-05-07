@@ -12,10 +12,12 @@ public class SQSManager {
 
     private AmazonSQS sqs;
     private Map<String, String> queueNameToUrl;
-    private SendMessageRequest sendMessageRequest = new SendMessageRequest().withDelaySeconds(5);
+    private SendMessageRequest sendMessageRequest = new SendMessageRequest();
 
     // Enable long polling on a message receipt
-    private ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest().withWaitTimeSeconds(20);
+    private ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest()
+            .withMaxNumberOfMessages(10)
+            .withWaitTimeSeconds(20);
 
     public SQSManager(){
         queueNameToUrl = new HashMap<>();
@@ -26,10 +28,10 @@ public class SQSManager {
 
     private void initQueues() {
         try {
-            CreateQueueResult create_result = sqs.createQueue(Configuration.QUEUE_APP_TO_MANAGER);
-            create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_WORKERS);
-            create_result = sqs.createQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
-            create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_APP);
+            //CreateQueueResult create_result = sqs.createQueue(Configuration.QUEUE_APP_TO_MANAGER);
+            //create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_WORKERS);
+            //create_result = sqs.createQueue(Configuration.QUEUE_WORKERS_TO_MANAGER);
+            //create_result = sqs.createQueue(Configuration.QUEUE_MANAGER_TO_APP);
 
             initReceivingQueue(Configuration.QUEUE_APP_TO_MANAGER);
             initReceivingQueue(Configuration.QUEUE_MANAGER_TO_WORKERS);
@@ -47,10 +49,10 @@ public class SQSManager {
         queueNameToUrl.put(queueName, queueUrl);
 
         // Enable long polling on an existing queue
-        SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
+        /*SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
                 .withQueueUrl(queueUrl)
                 .addAttributesEntry("ReceiveMessageWaitTimeSeconds", "20");
-        sqs.setQueueAttributes(set_attrs_request);
+        sqs.setQueueAttributes(set_attrs_request);*/
     }
 
     public void sendMessageToQueue(String queueName, String message) {

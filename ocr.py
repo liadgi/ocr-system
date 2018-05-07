@@ -1,3 +1,4 @@
+import sys
 import requests
 import boto3
 import os
@@ -20,8 +21,11 @@ def extractText(url, filename):
 		# Simple image to string
 		text = pytesseract.image_to_string(Image.open(filename))
 		os.remove(filename)
+	except IOError as e:
+		print "I/O error({0}): {1}".format(e.errno, e.strerror)
+		text = "couldn't extract text."
 	except Exception as e:
-		print e
+		print "Unexpected error:", sys.exc_info()[0]
 		text = "couldn't extract text."
 	
 	return text.encode('utf-8')
@@ -35,7 +39,6 @@ def sendMessage(text):
 	# Send message to SQS queue
 	response = sqs.send_message(
 	    QueueUrl=queue_url,
-	    DelaySeconds=10,
 	    MessageBody=(
 	        "done image task " + text
 	    )

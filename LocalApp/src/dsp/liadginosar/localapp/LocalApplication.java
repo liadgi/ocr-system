@@ -17,7 +17,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.LinkedList;
 import java.util.List;
 
 public class LocalApplication {
@@ -25,7 +24,7 @@ public class LocalApplication {
     private SQSManager sqsManager;
     private EC2Manager ec2Manager;
     private final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
-    private String managerInstanceId;
+    private List<String> instanceIds;
 
     public LocalApplication() {
         this.sqsManager = new SQSManager();
@@ -48,17 +47,19 @@ public class LocalApplication {
         }
     }
 
-    private void initManagerInstance(int numOfWorkers) {
+    private void initManagerInstance(int imagesPerWorker) {
         String userDataInitScript =
-                "#!/bin/bash\n"+
+                "#!/bin/bash\n" +
+                "sudo yum install java-1.8.0 -y\n" +
+                "sudo yum remove java-1.7.0-openjdk -y\n" +
                 "wget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\n" +
                 "echo executing manager... \n" +
-                "java -jar ~/Manager.jar " + numOfWorkers;
+                "java -jar ~/Manager.jar " + imagesPerWorker;
 
         String amazonAMIImageId = "ami-1853ac65";
         this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1);
 
-        this.managerInstanceId =  this.ec2Manager.runInstances().get(0);
+        this.instanceIds =  this.ec2Manager.runInstances();
 
     }
 
@@ -71,15 +72,15 @@ public class LocalApplication {
         if (args.length == 2) {
 
             String file_path = args[0];
-            int numOfWorkers = Integer.parseInt(args[1]);
+            int imagesPerWorker = Integer.parseInt(args[1]);
 
             System.out.println("File path: " + file_path);
-            System.out.println("workers #:" + numOfWorkers);
+            System.out.println("Images per worker #:" + imagesPerWorker);
 
             LocalApplication app = new LocalApplication();
 
             app.uploadImagesLinksFile(file_path);
-            //app.initManagerInstance(numOfWorkers);
+            app.initManagerInstance(imagesPerWorker);
             app.notifyManagerToDownloadImagesFile(file_path);
 
             String s3FileKey = app.retrieveOutputFileKey();
@@ -95,9 +96,7 @@ public class LocalApplication {
     }
 
     private void deactivateManager() {
-        List<String> singleInstanceList = new LinkedList<>();
-        singleInstanceList.add(this.managerInstanceId);
-        this.ec2Manager.deactivateInstances(singleInstanceList);
+        this.ec2Manager.deactivateInstances(this.instanceIds);
     }
 
     private String retrieveOutputFileKey() {
