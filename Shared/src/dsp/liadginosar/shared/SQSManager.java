@@ -4,16 +4,25 @@ import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.*;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class SQSManager {
 
     private AmazonSQS sqs;
+    private Map<String, String> queueNameToUrl;
+    private SendMessageRequest sendMessageRequest = new SendMessageRequest().withDelaySeconds(5);
+
+    // Enable long polling on a message receipt
+    private ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest().withWaitTimeSeconds(20);
 
     public SQSManager(){
+        queueNameToUrl = new HashMap<>();
         sqs = AmazonSQSClientBuilder.defaultClient();
         initQueues();
     }
+
 
     private void initQueues() {
         try {
@@ -33,29 +42,9 @@ public class SQSManager {
         }
     }
 
-    public void sendMessageToQueue(String queueName, String message) {
-        String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
-        SendMessageRequest send_msg_request = new SendMessageRequest()
-                .withQueueUrl(queueUrl)
-                .withMessageBody(message)
-                .withDelaySeconds(5);
-        sqs.sendMessage(send_msg_request);
-    }
-
-    public List<Message> retreiveMessagesFromQueue(String queueName) {
-        String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
-
-        // Enable long polling on a message receipt
-        ReceiveMessageRequest receive_request = new ReceiveMessageRequest()
-                .withQueueUrl(queueUrl)
-                .withWaitTimeSeconds(20);
-        List<Message> messages = sqs.receiveMessage(receive_request).getMessages();
-
-        return messages;
-    }
-
     public void initReceivingQueue(String queueName) {
         String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
+        queueNameToUrl.put(queueName, queueUrl);
 
         // Enable long polling on an existing queue
         SetQueueAttributesRequest set_attrs_request = new SetQueueAttributesRequest()
@@ -64,8 +53,51 @@ public class SQSManager {
         sqs.setQueueAttributes(set_attrs_request);
     }
 
+    public void sendMessageToQueue(String queueName, String message) {
+        String queueUrl = queueNameToUrl.get(queueName);
+        sendMessageRequest
+                .withQueueUrl(queueUrl)
+                .withMessageBody(message);
+        sqs.sendMessage(sendMessageRequest);
+
+        // check this out:
+        //sqs.sendMessageBatch()
+    }
+
+    public void sendMessageBatchToQueue(String queueName, ArrayList<String> messages) {
+        String queueUrl = queueNameToUrl.get(queueName);
+
+        int index = 0, totalMessages = messages.size(), messagesLeft;
+        while (index < totalMessages) {
+            messagesLeft = Math.min(10, totalMessages - index);
+            Collection<SendMessageBatchRequestEntry> entries =
+                    IntStream.range(index, index + messagesLeft)
+                            .mapToObj(i -> new SendMessageBatchRequestEntry(Integer.toString(i), messages.get(i)))
+                            .collect(Collectors.toList());
+
+            // Send multiple messages to the queue
+            SendMessageBatchRequest send_batch_request = new SendMessageBatchRequest()
+                    .withQueueUrl(queueUrl)
+                    .withEntries(entries);
+                        //.withDelaySeconds(10));
+            sqs.sendMessageBatch(send_batch_request);
+
+            index+=10;
+        }
+
+    }
+
+    public List<Message> retreiveMessagesFromQueue(String queueName) {
+        String queueUrl = queueNameToUrl.get(queueName);
+
+        receiveMessageRequest.withQueueUrl(queueUrl);
+        List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
+
+        return messages;
+    }
+
     public void deleteMessage(String queueName, Message m) {
-        String queueUrl = sqs.getQueueUrl(queueName).getQueueUrl();
+        String queueUrl = queueNameToUrl.get(queueName);
         sqs.deleteMessage(queueUrl, m.getReceiptHandle());
     }
 }

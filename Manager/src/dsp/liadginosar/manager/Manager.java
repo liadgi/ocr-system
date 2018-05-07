@@ -12,10 +12,8 @@ import dsp.liadginosar.shared.EC2Manager;
 import dsp.liadginosar.shared.SQSManager;
 
 import java.io.*;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
-
-//import com.amazonaws.services.sqs.model.AmazonSQSException;
 
 public class Manager {
 
@@ -28,12 +26,6 @@ public class Manager {
     private List<String> workerIds;
 
     public Manager(int imagesPerWorker){
-        workerIds = new LinkedList<>();
-
-        // init script for each worker
-        String userData = "";
-
-        ec2Manager = new EC2Manager(userData);
         sqsManager = new SQSManager();
         this.imagesPerWorker = imagesPerWorker;
     }
@@ -48,19 +40,35 @@ public class Manager {
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(s3is));
             String line;
 
-            int lineCounter = imagesPerWorker + 1;
-            int totalNumOfImages = 0;
-
-            while ((line = bufferedReader.readLine()) != null) {
-                if(lineCounter > imagesPerWorker) {
-                    workerIds.add(ec2Manager.runInstance());
-                    totalNumOfImages++;
-                    lineCounter = 0;
-                }
-                sqsManager.sendMessageToQueue(Configuration.QUEUE_MANAGER_TO_WORKERS,"new image task " + line);
+            int lineCounter = 0;
+            ArrayList<String> messages = new ArrayList<>();
+            while (((line = bufferedReader.readLine())) != null) {
+                messages.add("new image task " + line);
                 lineCounter++;
             }
-            this.totalNumOfImages = totalNumOfImages;
+            this.totalNumOfImages = lineCounter;
+            int numOfWorkers = (lineCounter / imagesPerWorker)
+                        + ((lineCounter % imagesPerWorker == 0) ? 0 : 1);
+
+            // init script for each worker
+            String userData =
+                    "#!/bin/bash\n" +
+                            "wget https://s3.amazonaws.com/dsp-ocr/ocr.py -O ocr.py\n" +
+                            "export LC_ALL=C\n" +
+                            "sudo apt-get update\n" +
+                            "sudo apt -y install python\n" +
+                            "sudo apt-get -y install python-pip\n" +
+                            "sudo pip install boto3\n" +
+                            "pip install pytesseract\n" +
+                            "pip install requests\n" +
+                            "sudo apt-get -y install tesseract-ocr\n" +
+                            "python ocr.py";
+
+            String ubuntuImageId = "ami-43a15f3e";
+            ec2Manager = new EC2Manager(userData, ubuntuImageId, numOfWorkers);
+            this.workerIds = ec2Manager.runInstances();
+
+            sqsManager.sendMessageBatchToQueue(Configuration.QUEUE_MANAGER_TO_WORKERS, messages);
 
             s3is.close();
 
@@ -77,9 +85,7 @@ public class Manager {
     }
 
     private void deactivateWorkers() {
-        for (String worker: workerIds) {
-            ec2Manager.deactivateInstance(worker);
-        }
+        ec2Manager.deactivateInstances(this.workerIds);
     }
 
     private void startManager(){
@@ -115,13 +121,13 @@ public class Manager {
     }
 
     private void notifyLocalApp() {
-        sqsManager.sendMessageToQueue(Configuration.QUEUE_MANAGER_TO_APP, "done task");
+        sqsManager.sendMessageToQueue(Configuration.QUEUE_MANAGER_TO_APP, "done task output.html");
     }
 
     private void uploadFile(File file) {
         final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
         try {
-            s3.putObject(new PutObjectRequest("dsp-ocr", "output", file));
+            s3.putObject(new PutObjectRequest("dsp-ocr", "output.html", file));
         } catch (AmazonServiceException e) {
             System.err.println(e.getErrorMessage());
             System.exit(1);
@@ -130,10 +136,11 @@ public class Manager {
 
     private File createSummaryFile() {
         File file = new File("output.html");
-        BufferedWriter output = null;
         try {
-            output = new BufferedWriter(new FileWriter(file));
-
+            BufferedWriter output = new BufferedWriter(new FileWriter(file));
+            output.write("<html>\n");
+            output.write("<title>OCR</title>\n");
+            output.write("<body>\n");
             int numOfImagesReceived = 0;
 
             while (numOfImagesReceived < this.totalNumOfImages) {
@@ -143,11 +150,12 @@ public class Manager {
                     for (Message m : messages) {
                         if (m.getBody().startsWith("done image task")) {
                             System.out.println("Message #" + numOfImagesReceived + " arrived: done image task");
-                            String[] arr = m.getBody().split("done image task ");
-
-                            String elem = createDivElement(arr[1]);
+                            String[] arr = m.getBody().split("done image task ",2);
+                            arr = arr[1].split(" ",2);
+                            String url = arr[0];
+                            String text = arr[1];
+                            String elem = createElement(url, text);
                             output.write(elem);
-                            output.newLine();
 
                             sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
                             numOfImagesReceived++;
@@ -155,9 +163,9 @@ public class Manager {
                     }
                 }
             }
-            if (output != null) {
-                output.close();
-            }
+            output.write("</body>\n");
+            output.write("</html>");
+            output.close();
         }
         catch (IOException e) {
             e.printStackTrace();
@@ -181,7 +189,12 @@ public class Manager {
         return fileLocation;
     }
 
-    private String createDivElement(String text) {
-        return "<div>" + text + "/div>";
+    private String createElement(String url, String text) {
+        String elem =
+                "<p>\n" +
+                    "<img src=" + url + "><br/>\n" +
+                        text +
+                "</p>\n";
+        return elem;
     }
 }

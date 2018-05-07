@@ -1,6 +1,7 @@
-import urllib
+import requests
 import boto3
 import os
+
 
 try:
     import Image
@@ -11,14 +12,19 @@ import pytesseract
 sqs = boto3.client('sqs', region_name='us-east-1')
 
 def extractText(url, filename):
-	urllib.urlretrieve(url, filename)
+	try:
+		img_data = requests.get(url).content
+		with open(filename, 'wb') as handler:
+			handler.write(img_data)
 
-	# Simple image to string
-	text = pytesseract.image_to_string(Image.open(filename))
-	print(text)
-	os.remove(filename)
-
-	return text
+		# Simple image to string
+		text = pytesseract.image_to_string(Image.open(filename))
+		os.remove(filename)
+	except Exception as e:
+		print e
+		text = "couldn't extract text."
+	
+	return text.encode('utf-8')
 
 def sendMessage(text):
 	response = sqs.get_queue_url(
@@ -35,8 +41,6 @@ def sendMessage(text):
 	    )
 	)
 
-	#print(response['MessageId'])
-	#return 0;
 
 def receiveMessage():
 	response = sqs.get_queue_url(

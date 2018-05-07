@@ -17,9 +17,12 @@ ubuntu:
 	sudo pip install boto3
 	pip install pytesseract
 	sudo apt-get -y install tesseract-ocr
+	python ocr.py
 
 amazon:
     sudo pip install boto3
     sudo pip install pytesseract
     sudo pip install tesseract
 
+console output:
+	cat /var/log/cloud-init-output.log

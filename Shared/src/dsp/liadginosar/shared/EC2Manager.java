@@ -3,38 +3,34 @@ package dsp.liadginosar.shared;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.InstanceType;
-import com.amazonaws.services.ec2.model.RunInstancesRequest;
-import com.amazonaws.services.ec2.model.RunInstancesResult;
-import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
+import com.amazonaws.services.ec2.model.*;
 
 import java.util.Base64;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class EC2Manager {
     private AmazonEC2 amazonEC2Client;
 
     private RunInstancesRequest runInstancesRequest;
 
-    public EC2Manager(String userData){
+    public EC2Manager(String userData, String imageId, int numberOfInstances){
         byte[] encodedBytes = Base64.getEncoder().encode(userData.getBytes());
         String userDataInitScriptBase64 = new String(encodedBytes);
 
         runInstancesRequest =
                 new RunInstancesRequest();
 
-        runInstancesRequest.withImageId("ami-1853ac65")
+        runInstancesRequest.withImageId(imageId)
                 .withInstanceType(InstanceType.T2Micro)
-                .withMinCount(1)
-                .withMaxCount(1)
-                //.withUserData(userDataInitScriptBase64)
+                .withMinCount(numberOfInstances)
+                .withMaxCount(numberOfInstances)
+                .withUserData(userDataInitScriptBase64)
                 .withKeyName("dist-sys-course")
-                //.withIamInstanceProfile(new IamInstanceProfileSpecification()
-                //        .withName("myrole"))
+                .withIamInstanceProfile(new IamInstanceProfileSpecification()
+                        .withName("myrole"))
                 .withSecurityGroups("launch-wizard-1");
 
-        if (userDataInitScriptBase64 != null) {
-            runInstancesRequest.withUserData(userDataInitScriptBase64);
-        }
 
         amazonEC2Client =
                 AmazonEC2ClientBuilder.standard()
@@ -43,17 +39,18 @@ public class EC2Manager {
                         .build();
     }
 
-    public String runInstance() {
+    public List<String> runInstances() {
         RunInstancesResult result = amazonEC2Client.runInstances(
                 runInstancesRequest);
 
-        return result.getReservation().getInstances().get(0).getInstanceId();
+        return result.getReservation().getInstances()
+                .stream().map(worker -> worker.getInstanceId()).collect(Collectors.toList());
     }
 
 
-    public void deactivateInstance(String workerInstanceId) {
+    public void deactivateInstances(List<String> workerInstanceIds) {
         TerminateInstancesRequest request = new TerminateInstancesRequest()
-                .withInstanceIds(workerInstanceId);
+                .withInstanceIds(workerInstanceIds);
 
         amazonEC2Client.terminateInstances(request);
     }

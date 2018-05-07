@@ -17,6 +17,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.LinkedList;
 import java.util.List;
 
 public class LocalApplication {
@@ -48,11 +49,16 @@ public class LocalApplication {
     }
 
     private void initManagerInstance(int numOfWorkers) {
-        String userDataInitScript = "#!/bin/bash\nwget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\necho executing manager... \njava -jar ~/Manager.jar " + numOfWorkers;
+        String userDataInitScript =
+                "#!/bin/bash\n"+
+                "wget https://s3.amazonaws.com/dsp-ocr/Manager.jar -O ~/Manager.jar\n" +
+                "echo executing manager... \n" +
+                "java -jar ~/Manager.jar " + numOfWorkers;
 
-        this.ec2Manager = new EC2Manager(userDataInitScript);
+        String amazonAMIImageId = "ami-1853ac65";
+        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1);
 
-        this.managerInstanceId =  this.ec2Manager.runInstance();
+        this.managerInstanceId =  this.ec2Manager.runInstances().get(0);
 
     }
 
@@ -76,8 +82,8 @@ public class LocalApplication {
             //app.initManagerInstance(numOfWorkers);
             app.notifyManagerToDownloadImagesFile(file_path);
 
-            String s3FileLocation = app.retrieveOutputFileLocation();
-            app.WriteFileToDisk(s3FileLocation);
+            String s3FileKey = app.retrieveOutputFileKey();
+            app.WriteFileToDisk(s3FileKey);
             app.deactivateManager();
 
             System.out.println("Done.");
@@ -89,17 +95,19 @@ public class LocalApplication {
     }
 
     private void deactivateManager() {
-        this.ec2Manager.deactivateInstance(this.managerInstanceId);
+        List<String> singleInstanceList = new LinkedList<>();
+        singleInstanceList.add(this.managerInstanceId);
+        this.ec2Manager.deactivateInstances(singleInstanceList);
     }
 
-    private String retrieveOutputFileLocation() {
+    private String retrieveOutputFileKey() {
         System.out.println("Retrieving output file location");
 
 
         String s3FileLocation = null;
 
         List<Message> messages;
-        while ((messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_MANAGER_TO_APP)) == null);
+        while ((messages = sqsManager.retreiveMessagesFromQueue(Configuration.QUEUE_MANAGER_TO_APP)).size() == 0);
 
         for (Message m : messages) {
             if (m.getBody().startsWith("done task")) {
