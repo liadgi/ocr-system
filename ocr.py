@@ -12,7 +12,7 @@ import pytesseract
 
 sqs = boto3.client('sqs', region_name='us-east-1')
 
-def extractText(url, filename):
+def extractText(url, filename, urlIndex):
 	try:
 		img_data = requests.get(url).content
 		with open(filename, 'wb') as handler:
@@ -20,15 +20,23 @@ def extractText(url, filename):
 
 		# Simple image to string
 		text = pytesseract.image_to_string(Image.open(filename))
-		os.remove(filename)
+		status = 'success'
 	except IOError as e:
-		print "I/O error({0}): {1}".format(e.errno, e.strerror)
-		text = "couldn't extract text."
+		text = "line "+ `urlIndex` + "\n{0}".format(e.message) + "\n"
+		print text
+		status = 'failed'
 	except Exception as e:
-		print "Unexpected error:", sys.exc_info()[0]
-		text = "couldn't extract text."
-	
-	return text.encode('utf-8')
+		#print "Unexpected error:", sys.exc_info()[0]
+		text = "line "+ `urlIndex` + "\n{0}".format(e.message) + "\n"
+		print text
+		status = 'failed'
+
+	try:
+		os.remove(filename)
+	except OSError:
+		pass
+
+	return status, text.encode('utf-8')
 
 def sendMessage(text):
 	response = sqs.get_queue_url(
@@ -40,7 +48,7 @@ def sendMessage(text):
 	response = sqs.send_message(
 	    QueueUrl=queue_url,
 	    MessageBody=(
-	        "done image task " + text
+	        text
 	    )
 	)
 
@@ -78,10 +86,16 @@ def receiveMessage():
 	return message
 
 if __name__ == "__main__":
+	urlIndex = 1
 	while True:
 		message = receiveMessage()
 		words = message["Body"].split("new image task ")
 		url = words[1];
 		filename = url.rsplit('/', 1)[-1]
-		imageText = extractText(url, filename)
-		sendMessage(url + " " + imageText)
+		status, imageText = extractText(url, filename, urlIndex)
+		if status == 'failed':
+			sendMessage("failed image task " + url + " " + imageText)
+		else:
+			sendMessage("done image task " + url + " " + imageText)
+
+		urlIndex += 1

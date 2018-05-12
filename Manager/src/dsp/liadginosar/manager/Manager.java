@@ -61,6 +61,7 @@ public class Manager {
                             "sudo pip install boto3\n" +
                             "pip install pytesseract\n" +
                             "pip install requests\n" +
+                            "pip install pyopenssl\n" +
                             "sudo apt-get -y install tesseract-ocr\n" +
                             "python ocr.py";
 
@@ -148,18 +149,24 @@ public class Manager {
 
                 if (messages != null) {
                     for (Message m : messages) {
-                        if (m.getBody().startsWith("done image task")) {
-                            System.out.println("Message #" + numOfImagesReceived + " arrived: done image task");
-                            String[] arr = m.getBody().split("done image task ",2);
+                        String doneText = "done image task ", failedText = "failed image task ";
+                        if (m.getBody().startsWith(doneText)) {
+                            System.out.println("Message #" + numOfImagesReceived + " arrived: " + doneText);
+                            String[] arr = m.getBody().split(doneText,2);
                             arr = arr[1].split(" ",2);
                             String url = arr[0];
                             String text = arr[1];
                             String elem = createElement(url, text);
                             output.write(elem);
 
-                            sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
-                            numOfImagesReceived++;
                         }
+                        else if (m.getBody().startsWith(failedText)) {
+                            String[] arr = m.getBody().split(failedText,2);
+                            System.out.println("Message #" + numOfImagesReceived + " arrived: " + failedText + ":\n" + arr[1]);
+                        }
+
+                        sqsManager.deleteMessage(Configuration.QUEUE_WORKERS_TO_MANAGER, m);
+                        numOfImagesReceived++;
                     }
                 }
             }

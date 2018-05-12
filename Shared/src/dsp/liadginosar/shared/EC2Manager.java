@@ -13,6 +13,7 @@ public class EC2Manager {
     private AmazonEC2 amazonEC2Client;
 
     private RunInstancesRequest runInstancesRequest;
+    private String INSTANCE_TYPE = "Type";
 
     public EC2Manager(String userData, String imageId, int numberOfInstances, String type){
         byte[] encodedBytes = Base64.getEncoder().encode(userData.getBytes());
@@ -21,14 +22,13 @@ public class EC2Manager {
         runInstancesRequest =
                 new RunInstancesRequest();
 
-        TagSpecification tagSpecification = new TagSpecification();
-        tagSpecification.withTags(new Tag("Type", type));
-
         runInstancesRequest.withImageId(imageId)
                 .withInstanceType(InstanceType.T2Micro)
                 .withMinCount(numberOfInstances)
                 .withMaxCount(numberOfInstances)
-                .withTagSpecifications(tagSpecification)
+                .withTagSpecifications(new TagSpecification()
+                        .withResourceType(ResourceType.Instance)
+                        .withTags(new Tag(INSTANCE_TYPE, type)))
                 .withInstanceInitiatedShutdownBehavior(ShutdownBehavior.Terminate)
                 .withUserData(userDataInitScriptBase64)
                 .withKeyName("dist-sys-course")
@@ -61,6 +61,29 @@ public class EC2Manager {
     }
 
     public boolean isInstanceTypeUp(String instanceType) {
+
+        boolean done = false;
+        int pending = 0, running = 16;
+
+        DescribeInstancesRequest request = new DescribeInstancesRequest();
+        while(!done) {
+            DescribeInstancesResult response = amazonEC2Client.describeInstances(request);
+            for(Reservation reservation : response.getReservations()) {
+                for(Instance instance : reservation.getInstances()) {
+                    Tag typeTag = instance.getTags().get(0);
+                    if (typeTag.getKey().equals(INSTANCE_TYPE) && typeTag.getValue().equals(instanceType)) {
+                        int state = instance.getState().getCode();
+                        return (state == pending || state == running);
+                    }
+                }
+            }
+
+            request.setNextToken(response.getNextToken());
+
+            if(response.getNextToken() == null) {
+                done = true;
+            }
+        }
         return false;
     }
 }

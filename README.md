@@ -29,6 +29,7 @@ ubuntu user-data script:
 	sudo pip install boto3
 	pip install pytesseract
 	pip install requests
+	pip install pyopenssl
 	sudo apt-get -y install tesseract-ocr
 	python ocr.py
 

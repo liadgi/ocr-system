@@ -57,9 +57,12 @@ public class LocalApplication {
                 "java -jar ~/Manager.jar " + imagesPerWorker;
 
         String amazonAMIImageId = "ami-1853ac65";
-        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1, "Manager");
 
-        this.instanceIds =  this.ec2Manager.runInstances();
+        String instanceType = "Manager";
+        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1, instanceType);
+        if (!this.ec2Manager.isInstanceTypeUp(instanceType)) {
+            this.instanceIds = this.ec2Manager.runInstances();
+        }
 
     }
 
@@ -67,7 +70,7 @@ public class LocalApplication {
         this.sqsManager.sendMessageToQueue(Configuration.QUEUE_APP_TO_MANAGER, "new task " + getKeyName(file_path));
     }
 
-    public static void main(String[] args) throws IOException, Exception {
+    public static void main(String[] args) throws Exception {
 
         if (args.length == 2) {
 
