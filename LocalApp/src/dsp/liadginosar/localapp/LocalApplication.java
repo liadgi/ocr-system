@@ -57,7 +57,7 @@ public class LocalApplication {
                 "java -jar ~/Manager.jar " + imagesPerWorker;
 
         String amazonAMIImageId = "ami-1853ac65";
-        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1);
+        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1, "Manager");
 
         this.instanceIds =  this.ec2Manager.runInstances();
 
