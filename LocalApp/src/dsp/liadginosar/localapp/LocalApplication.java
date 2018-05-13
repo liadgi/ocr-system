@@ -29,15 +29,30 @@ public class LocalApplication {
     public LocalApplication() {
         this.sqsManager = new SQSManager();
     }
+
+
+    private void startLocalApp(String file_path, int imagesPerWorker) {
+        initManagerInstance(imagesPerWorker);
+        if (!this.ec2Manager.isInstanceTypeUp("Manager")) {
+            this.instanceIds = this.ec2Manager.runInstances();
+            uploadImagesLinksFile(file_path);
+            this.sqsManager.sendMessageToQueue(Configuration.QUEUE_APP_TO_MANAGER, "new task " + getKeyName(file_path));
+            String s3FileKey = retrieveOutputFileKey();
+            WriteFileToDisk(s3FileKey);
+            deactivateManager();
+        } else {
+            System.out.println("Manager is already up.");
+        }
+
+    }
     private String getKeyName(String file_path) {
         return Paths.get(file_path).getFileName().toString();
     }
 
     private void uploadImagesLinksFile(String file_path) {
-        System.out.println("uploadImagesLinksFile");
+        System.out.println("upload images links file");
         try {
             String key_name = getKeyName(file_path);
-
             PutObjectRequest request = new PutObjectRequest("dsp-ocr", key_name, new File(file_path));
 
             s3.putObject(request.withCannedAcl(CannedAccessControlList.PublicRead));
@@ -56,24 +71,11 @@ public class LocalApplication {
                 "echo executing manager... \n" +
                 "java -jar ~/Manager.jar " + imagesPerWorker;
 
-        String amazonAMIImageId = "ami-1853ac65";
-
-        String instanceType = "Manager";
-        this.ec2Manager = new EC2Manager(userDataInitScript, amazonAMIImageId, 1, instanceType);
-        if (!this.ec2Manager.isInstanceTypeUp(instanceType)) {
-            this.instanceIds = this.ec2Manager.runInstances();
-        }
-
-    }
-
-    private void notifyManagerToDownloadImagesFile(String file_path) {
-        this.sqsManager.sendMessageToQueue(Configuration.QUEUE_APP_TO_MANAGER, "new task " + getKeyName(file_path));
+        this.ec2Manager = new EC2Manager(userDataInitScript, "ami-1853ac65", 1, "Manager");
     }
 
     public static void main(String[] args) throws Exception {
-
         if (args.length == 2) {
-
             String file_path = args[0];
             int imagesPerWorker = Integer.parseInt(args[1]);
 
@@ -81,18 +83,9 @@ public class LocalApplication {
             System.out.println("Images per worker #:" + imagesPerWorker);
 
             LocalApplication app = new LocalApplication();
-
-            app.uploadImagesLinksFile(file_path);
-            app.initManagerInstance(imagesPerWorker);
-            app.notifyManagerToDownloadImagesFile(file_path);
-
-            String s3FileKey = app.retrieveOutputFileKey();
-            app.WriteFileToDisk(s3FileKey);
-            app.deactivateManager();
-
+            app.startLocalApp(file_path, imagesPerWorker);
 
             System.out.println("Done.");
-
         } else {
             throw new Exception("Incorrect number of arguments.");
         }
@@ -101,13 +94,12 @@ public class LocalApplication {
 
 
     private void deactivateManager() {
+        System.out.println("Deactivating Manager");
         this.ec2Manager.deactivateInstances(this.instanceIds);
     }
 
     private String retrieveOutputFileKey() {
-        System.out.println("Retrieving output file location");
-
-
+        System.out.println("Waiting to retrieve output file location...");
         String s3FileLocation = null;
 
         List<Message> messages;
@@ -125,6 +117,7 @@ public class LocalApplication {
 
     private void WriteFileToDisk(String s3FileKey) {
         try {
+            System.out.println("Writing file to disk");
             S3Object o = s3.getObject("dsp-ocr", s3FileKey);
             S3ObjectInputStream s3is = o.getObjectContent();
 

@@ -158,6 +158,7 @@ public class Manager {
                             String text = arr[1];
                             String elem = createElement(url, text);
                             output.write(elem);
+                            output.flush();
 
                         }
                         else if (m.getBody().startsWith(failedText)) {
