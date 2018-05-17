@@ -65,8 +65,7 @@ public class Manager {
                             "sudo apt-get -y install tesseract-ocr\n" +
                             "python ocr.py";
 
-            String ubuntuImageId = "ami-43a15f3e";
-            ec2Manager = new EC2Manager(userData, ubuntuImageId, numOfWorkers, "Worker");
+            ec2Manager = new EC2Manager(userData, "ami-43a15f3e", numOfWorkers, "Worker");
             this.workerIds = ec2Manager.runInstances();
 
             sqsManager.sendMessageBatchToQueue(Configuration.QUEUE_MANAGER_TO_WORKERS, messages);
